@@ -1,0 +1,7 @@
+google-cloud-bigquery==1.6.1
+google-cloud-datastore==1.7.3
+google-cloud-pubsub==0.39.0
+google-cloud-storage==1.14.0
+requests==2.21.0
+pytz==2018.9
+pytzdata==2019.1
