@@ -19,53 +19,57 @@ def parse_pubsub(message):
 
 	entity["Running"] = True
 	client.put(entity)
-	
-	while True:
-		entity = client.get(client.key("webapi", message.strip()))
-		url = entity["URL"]
-		date = datetime.datetime.strptime(entity["FromDate"], "%d/%m/%Y")
-		todate = date + datetime.timedelta(days=1)
-		bucket = entity["Bucket"]
-		output_folder = entity["OutputFolder"]
-		table_name = entity["TableName"]
-		output_file = output_folder + "/" + table_name + "/" + date.strftime("%Y/%m/%d") + ".csv"
-		schema_file = "schemas/" + output_folder + "/" + table_name + ".csv"
+	try:
+		while True:
+			entity = client.get(client.key("webapi", message.strip()))
+			url = entity["URL"]
+			date = datetime.datetime.strptime(entity["FromDate"], "%d/%m/%Y")
+			todate = date + datetime.timedelta(days=1)
+			bucket = entity["Bucket"]
+			output_folder = entity["OutputFolder"]
+			table_name = entity["TableName"]
+			output_file = output_folder + "/" + table_name + "/" + date.strftime("%Y/%m/%d") + ".csv"
+			schema_file = "schemas/" + output_folder + "/" + table_name + ".csv"
 
-		data = { "FromDate" : date.strftime("%m/%d/%Y %H:%M:%S"), 
-				 "ToDate" : todate.strftime("%m/%d/%Y %H:%M:%S"), 
-				 "CompressionType" : "A" }
+			data = { "FromDate" : date.strftime("%m/%d/%Y %H:%M:%S"), 
+					 "ToDate" : todate.strftime("%m/%d/%Y %H:%M:%S"), 
+					 "CompressionType" : "A" }
 
-		logging.getLogger().info("POST Payload : " + json.dumps(data))
+			logging.getLogger().info("POST Payload : " + json.dumps(data))
 
-		res = post(url, json=data)
+			res = post(url, json=data)
+			
+			if res.status_code != 200:
+				entity["Running"] = False
+				client.put(entity)
+				break
+
+			lines = []
+			columns = ""
+			for line in res.json():
+				value = ",".join(map(str, line.values()))
+				lines.append(value)
+				columns = ",".join(map(str, line.keys()))
+
+			bucket = storage_client.get_bucket(bucket)
+			blob = bucket.blob(output_file)
+			blob.upload_from_string("\n".join(lines))
+
+			if columns:
+				blob = bucket.blob(schema_file)
+				blob.upload_from_string(columns)
+
+			if datetime.datetime.now(timezone("Asia/Kolkata")).date() >= todate.date():
+				entity["FromDate"] = unicode(todate.strftime("%d/%m/%Y"))
+				client.put(entity)
+			else:
+				entity["Running"] = False
+				client.put(entity)
+				break
+	except:
+		entity["Running"] = False
+		client.put(entity)
 		
-		if res.status_code != 200:
-			entity["Running"] = False
-			client.put(entity)
-			break
-
-		lines = []
-		columns = ""
-		for line in res.json():
-			value = ",".join(map(str, line.values()))
-			lines.append(value)
-			columns = ",".join(map(str, line.keys()))
-
-		bucket = storage_client.get_bucket(bucket)
-		blob = bucket.blob(output_file)
-		blob.upload_from_string("\n".join(lines))
-
-		if columns:
-			blob = bucket.blob(schema_file)
-			blob.upload_from_string(columns)
-
-		if datetime.datetime.now(timezone("Asia/Kolkata")).date() >= todate.date():
-			entity["FromDate"] = unicode(todate.strftime("%d/%m/%Y"))
-			client.put(entity)
-		else:
-			entity["Running"] = False
-			client.put(entity)
-			break
 
 def run(argv=None):
 	parser = argparse.ArgumentParser()
